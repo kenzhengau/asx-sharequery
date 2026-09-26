@@ -48,23 +48,25 @@ for the repo's `pyproject.toml`.
 
 ## Step 1 - put the repo on GitHub
 
-The repository has already been initialised and committed locally. All that is left is the
-remote:
+The repository has already been initialised and committed locally on `main`, so all that
+is left is the remote:
 
 ```bash
 cd /Users/kenzheng/Desktop/asx-sharequery
 
-# Verify nothing secret is about to be published - .env, .venv and
-# .streamlit/secrets.toml are all git-ignored, and this should show no .env entry.
+# Check what is about to be published. .env, .venv and .streamlit/secrets.toml are all
+# git-ignored, so this lists only source, docs and the lockfile.
 git status --short
 
-# Option A - GitHub CLI (creates the repo and pushes in one step)
-gh repo create asx-sharequery --public --source=. --push
-
-# Option B - create an empty repo in the browser, then:
+# Option A - the GitHub website, no extra tooling. Create an empty PUBLIC repo there, then:
 git remote add origin git@github.com:<your-account>/asx-sharequery.git
 git push -u origin main
+
+# Option B - the GitHub CLI, if you install it first (brew install gh):
+gh repo create asx-sharequery --public --source=. --push
 ```
+
+The commit is already made, so nothing above needs a `git commit`.
 
 ## Step 2 - create the app
 
