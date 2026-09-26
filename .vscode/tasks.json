@@ -1,0 +1,23 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run ASX Share Agent",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python -m asx_sharequery",
+			"isBackground": true,
+			"problemMatcher": [
+				"$tsc-watch"
+			]
+		},
+		{
+			"label": "Run ASX Share Agent (Web UI)",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python -m asx_sharequery.webui",
+			"isBackground": true,
+			"problemMatcher": [
+				"$tsc-watch"
+			]
+		}
+	]
+}

@@ -1,0 +1,45 @@
+[project]
+name = "asx-sharequery"
+version = "0.1.0"
+description = "Microsoft Agent Framework + ChatGPT (OpenAI) agent that researches ASX-listed shares"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# NOTE: we deliberately depend on `agent-framework-core` + `agent-framework-openai`
+# instead of the `agent-framework` meta-package. The meta-package pulls
+# `agent-framework-core[all]`, which drags in ~30 provider integrations plus `mcp`.
+# `mcp` -> `pyjwt[crypto]` -> `cryptography`, and recent `cryptography` releases no
+# longer publish CPython wheels for Intel macOS, so installs would attempt a Rust
+# source build. The slim packages keep this project installable everywhere and are
+# all we need for the ChatGPT (OpenAI) API - an OpenAI-compatible Chat Completions
+# endpoint - and for DeepSeek as the alternative provider.
+dependencies = [
+    "agent-framework-core>=1.19.0",
+    "agent-framework-openai>=1.14.4",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.1",
+    # PDF text extraction for the SharePoint library reader. pypdf is pure Python, so it
+    # installs anywhere; .docx is parsed with the standard library instead.
+    "pypdf>=5.0.0",
+]
+
+[project.optional-dependencies]
+# Browser chat window. DevUI describes itself as a sample app rather than production
+# software, and it is still a beta release, so it stays opt-in:  uv sync --extra web
+web = ["agent-framework-devui>=1.0.0b260918"]
+
+# Streamlit chat front-end, which is what Streamlit Community Cloud runs. The cloud build
+# uses streamlit_app/requirements.txt rather than this, but the extra is what makes local
+# development and testing of the same page a single command:  uv sync --extra streamlit
+streamlit = ["streamlit>=1.64"]
+
+[project.scripts]
+asx-sharequery = "asx_sharequery.cli:main"
+asx-sharequery-web = "asx_sharequery.webui:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asx_sharequery"]

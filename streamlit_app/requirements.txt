@@ -1,0 +1,24 @@
+# Dependencies for the Streamlit Community Cloud deployment.
+#
+# Community Cloud installs from ONE dependency file. It looks in the directory holding the
+# entrypoint first and then the repo root, and within a directory it prefers uv.lock, then
+# Pipfile, environment.yml, requirements.txt, and finally pyproject.toml. This file lives
+# next to the entrypoint on purpose: the repo root also has a uv.lock, which would
+# otherwise win and drive the build from the full development lockfile.
+#
+# The project itself is deliberately NOT installed here - streamlit_app/app.py puts src/
+# on sys.path instead, so no editable install has to reach out of this folder for the
+# repo's pyproject.toml.
+#
+# These versions match uv.lock, so the deployed app runs the same stack the CLI was
+# tested against. Bump both together.
+
+streamlit==1.64.0
+agent-framework-core==1.19.0
+agent-framework-openai==1.14.4
+httpx==0.28.1
+python-dotenv==1.2.3
+
+# Deliberately absent:
+#   pypdf - only the SharePoint reader needs it, and that tool is switched off here. It is
+#           also imported lazily inside the client, so nothing else drags it in.
