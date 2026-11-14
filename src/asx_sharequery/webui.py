@@ -19,13 +19,15 @@ from .agent import create_agent
 from .config import ConfigError, load_settings
 from .preflight import check_auth
 
+from . import __version__
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 _BANNER = """\
-ASX Share Query  -  web chat window (Agent Framework DevUI)
+ASX Share Query v{version}  -  web chat window (Agent Framework DevUI)
   provider : {provider}
   model    : {model}
   endpoint : {base_url}
@@ -121,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         _BANNER.format(
+            version=__version__,
             provider=settings.provider_label or settings.provider,
             model=settings.model,
             base_url=settings.base_url,

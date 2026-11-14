@@ -45,6 +45,7 @@ if str(_SRC) not in sys.path:
 
 from agent_framework import Agent, AgentSession  # noqa: E402
 
+from asx_sharequery import __version__  # noqa: E402
 from asx_sharequery.agent import create_agent  # noqa: E402
 from asx_sharequery.config import (  # noqa: E402
     SHAREPOINT_VARS,
@@ -55,6 +56,7 @@ from asx_sharequery.config import (  # noqa: E402
 from asx_sharequery.preflight import check_auth  # noqa: E402
 
 APP_TITLE = "ASX Share Query"
+APP_VERSION = f"v{__version__}"
 
 # A speed bump, not a security control: a visitor can start a new browser session and get
 # a fresh allowance. The real spend control is a hard limit set on the provider account,
@@ -74,6 +76,7 @@ _DISCLAIMER = (
 )
 
 st.set_page_config(page_title=APP_TITLE, page_icon="📈", layout="centered")
+st.caption(f"{APP_TITLE} {APP_VERSION}")
 
 
 # --------------------------------------------------------------------------------------
