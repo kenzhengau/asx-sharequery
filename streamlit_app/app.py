@@ -277,19 +277,10 @@ def _answer(agent: Agent, prompt: str) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def _render_sidebar(settings: Settings, agent: Agent) -> None:
-    """Describe what this deployment is, and offer the ways to move on from this chat."""
+def _render_sidebar(agent: Agent) -> None:
+    """Show data availability and conversation controls."""
     with st.sidebar:
         st.subheader(f"{APP_TITLE} {APP_VERSION}")
-        st.caption("This deployment")
-        st.markdown(
-            "```text\n"
-            f"provider : {settings.provider_label or settings.provider}\n"
-            f"model    : {settings.model}\n"
-            f"url      : {settings.base_url}\n"
-            f"api key  : {settings.redacted_key}\n"
-            "```"
-        )
         st.caption(
             "Public ASX data and Google News headlines only. Reading your own documents "
             "is switched off here."
@@ -361,7 +352,7 @@ def main() -> None:
         with st.spinner("Checking the model API key..."):
             st.session_state.auth_warning = check_auth(settings)
 
-    _render_sidebar(settings, agent)
+    _render_sidebar(agent)
 
     for message in st.session_state.history:
         with st.chat_message(message["role"]):
