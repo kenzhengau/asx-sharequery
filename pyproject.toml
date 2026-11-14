@@ -1,6 +1,6 @@
 [project]
 name = "asx-sharequery"
-version = "0.1.5"
+version = "0.1.6"
 description = "Microsoft Agent Framework + ChatGPT (OpenAI) agent that researches ASX-listed shares"
 readme = "README.md"
 requires-python = ">=3.10"

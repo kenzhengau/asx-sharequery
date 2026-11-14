@@ -86,6 +86,71 @@ def _failure(symbol: str, exc: Exception) -> str:
     )
 
 
+def _share_research_news_payloads(
+    symbol: str,
+    company_name: str | None,
+    sector: str | None,
+    company_news: list[Any],
+    industry_news: list[Any],
+) -> dict[str, Any]:
+    """Return the company and industry news sections used by the main share briefing."""
+    company_query = build_query(symbol.upper(), company_name)
+    industry_query = build_industry_query(symbol.upper(), company_name, sector)
+
+    def _payload(query: str, items: list[Any], *, source: str, note: str) -> dict[str, Any]:
+        return {
+            "source": source,
+            "query": query,
+            "search_url": search_url(query),
+            "count": len(items),
+            "items": [
+                {key: value for key, value in item.to_dict().items() if key != "url"}
+                for item in items
+            ],
+            "note": note,
+        }
+
+    return {
+        "media_coverage": _payload(
+            company_query,
+            company_news,
+            source="Google News (third-party media headlines)",
+            note=(
+                "Media headlines only - no article text was read and no per-article link "
+                "is available. Give the outlet and the date for each headline, then offer "
+                "the single 'search_url' so the user can open the coverage themselves. "
+                "These are journalists' reports and opinions, not company disclosures, so "
+                "never present one as an ASX announcement or as established fact."
+            ),
+        ),
+        "industry_context": _payload(
+            industry_query,
+            industry_news,
+            source="Google News (industry context)",
+            note=(
+                "Broader industry or sector context, not company-specific announcements. "
+                "Use this to explain market conditions, peer moves and the wider theme "
+                "affecting the stock, then differentiate it clearly from the company's own "
+                "ASX disclosures."
+            ),
+        ),
+    }
+
+
+def _news_error_payload(symbol: str, exc: Exception, *, kind: str) -> dict[str, Any]:
+    """Return a consistent error payload for an individual news fetch."""
+    return {
+        "source": "Google News",
+        "symbol": symbol,
+        "error": str(exc),
+        "kind": kind,
+        "hint": (
+            "The media feed is unavailable right now. Fall back to the ASX announcements "
+            "and say that the broader context could not be retrieved."
+        ),
+    }
+
+
 @tool(
     name="get_share_research",
     description=(
@@ -119,6 +184,39 @@ async def get_share_research(symbol: Annotated[str, _SYMBOL_DOC]) -> str:
         payload["price"] = {"error": str(snapshot)}
     else:
         payload["price"] = snapshot.to_dict()
+        company_name = snapshot.name
+        sector = snapshot.sector
+        attached_news = await asyncio.gather(
+            fetch_news(symbol, company_name),
+            fetch_industry_news(symbol, company_name, sector),
+            return_exceptions=True,
+        )
+
+        if isinstance(attached_news[0], BaseException):
+            payload["media_coverage"] = _news_error_payload(
+                symbol, attached_news[0], kind="company_news"
+            )
+        else:
+            payload["media_coverage"] = _share_research_news_payloads(
+                symbol,
+                company_name,
+                sector,
+                attached_news[0],
+                attached_news[1] if not isinstance(attached_news[1], BaseException) else [],
+            )["media_coverage"]
+
+        if isinstance(attached_news[1], BaseException):
+            payload["industry_context"] = _news_error_payload(
+                symbol, attached_news[1], kind="industry_news"
+            )
+        else:
+            payload["industry_context"] = _share_research_news_payloads(
+                symbol,
+                company_name,
+                sector,
+                attached_news[0] if not isinstance(attached_news[0], BaseException) else [],
+                attached_news[1],
+            )["industry_context"]
 
     if isinstance(announcements, BaseException):
         payload["announcements"] = {"error": str(announcements)}
