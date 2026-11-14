@@ -76,7 +76,6 @@ _DISCLAIMER = (
 )
 
 st.set_page_config(page_title=APP_TITLE, page_icon="📈", layout="centered")
-st.caption(f"{APP_TITLE} {APP_VERSION}")
 
 
 # --------------------------------------------------------------------------------------
@@ -281,7 +280,8 @@ def _answer(agent: Agent, prompt: str) -> None:
 def _render_sidebar(settings: Settings, agent: Agent) -> None:
     """Describe what this deployment is, and offer the ways to move on from this chat."""
     with st.sidebar:
-        st.subheader("This deployment")
+        st.subheader(f"{APP_TITLE} {APP_VERSION}")
+        st.caption("This deployment")
         st.markdown(
             "```text\n"
             f"provider : {settings.provider_label or settings.provider}\n"
