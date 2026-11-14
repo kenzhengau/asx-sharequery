@@ -21,7 +21,13 @@ from .asx_client import (
     company_page_url,
 )
 from .config import ConfigError, SharePointSettings, load_settings
-from .news_client import NewsError, build_query, search_url
+from .news_client import (
+    NewsError,
+    build_industry_query,
+    build_query,
+    get_industry_news as fetch_industry_news,
+    search_url,
+)
 from .news_client import get_share_news as fetch_news
 from .sharepoint_client import SharePointClient, SharePointError
 
@@ -220,6 +226,63 @@ async def get_share_news(
     )
 
 
+@tool(
+    name="get_industry_news",
+    description=(
+        "Get broader industry or sector news for an ASX-listed company so the model can "
+        "summarise market conditions, peer trends and industry developments that affect "
+        "the stock. Returns JSON with headlines, outlet names, publication times and a "
+        "search URL for further browsing."
+    ),
+)
+async def get_industry_news(
+    symbol: Annotated[str, _SYMBOL_DOC],
+    company_name: Annotated[
+        str | None,
+        "Optional full company name, for example 'BHP Group Limited'.",
+    ] = None,
+    sector: Annotated[
+        str | None,
+        "Optional sector or industry label from the company's ASX snapshot, for example 'Materials'.",
+    ] = None,
+) -> str:
+    """Fetch broader sector/industry news around a stock."""
+    try:
+        items = await fetch_industry_news(symbol, company_name, sector)
+    except NewsError as exc:
+        return _dump(
+            {
+                "symbol": symbol,
+                "error": str(exc),
+                "hint": (
+                    "The broader industry news feed is unavailable. Report that the "
+                    "company-level coverage was retrieved but the industry context could "
+                    "not be fetched."
+                ),
+            }
+        )
+
+    query = build_industry_query(symbol.upper(), company_name, sector)
+    return _dump(
+        {
+            "source": "Google News (industry context)",
+            "query": query,
+            "search_url": search_url(query),
+            "count": len(items),
+            "items": [
+                {key: value for key, value in item.to_dict().items() if key != "url"}
+                for item in items
+            ],
+            "note": (
+                "Broader industry or sector context, not company-specific announcements. "
+                "Use this to explain market conditions, peer moves and the wider theme "
+                "affecting the stock, then differentiate it clearly from the company's own "
+                "ASX disclosures."
+            ),
+        }
+    )
+
+
 def _sharepoint_settings() -> SharePointSettings:
     """Resolve the SharePoint settings or explain why the feature is unavailable.
 
@@ -353,6 +416,7 @@ ASX_TOOLS = [
     get_share_snapshot,
     get_share_announcements,
     get_share_news,
+    get_industry_news,
 ]
 """The public-data tool surface: price snapshots, announcements and media coverage.
 

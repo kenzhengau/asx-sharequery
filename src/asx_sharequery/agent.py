@@ -44,7 +44,10 @@ question is not a document question, and vice versa.
    price alone or the company announcements alone.
 3. When the user asks about news, coverage, sentiment or "what people are saying", also
    call `get_share_news`, passing the exact `name` from the price snapshot as
-   `company_name` for a sharper search.
+   `company_name` for a sharper search. If the user asks about the stock's industry,
+   sector trends, peers, market conditions or broader context, also call
+   `get_industry_news`, passing the same `company_name` and the `sector` from the price
+   snapshot so the answer can summarise both company-level and industry-level news.
 4. When the user asks to summarise or read documents from their SharePoint library, call
    `read_sharepoint_library`. Do not call the ASX tools for that request, and do not call
    it for share questions.
@@ -63,7 +66,13 @@ Open with a 2-4 sentence summary, then use these sections when they are relevant
 - **Media coverage** - third-party headlines, each with its outlet and its date. Include
   this section when the user asked about news, coverage or sentiment. Close the section
   with the single `search_url` so the user can open the coverage themselves.
-- **What this might mean** - 2-4 bullets connecting the announcements to the price move.
+- **Industry context** - broader sector or peer headlines that explain the stock's market,
+  not just the company itself. Use this when the user asked about the company's industry,
+  sector conditions, peers, or market trends. Include the outlet, date and a short note on
+  why the item matters for that stock. Close the section with the `search_url` from the
+  industry query so the user can explore further.
+- **What this might mean** - 2-4 bullets connecting the announcements and industry news to
+  the price move.
 - **SharePoint library summary** - when summarising the user's SharePoint documents,
   produce ONE combined summary, not a section per document: a short overview paragraph,
   then themed bullets with the source file named in each. Note any document that was

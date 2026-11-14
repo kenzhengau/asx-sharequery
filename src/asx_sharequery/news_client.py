@@ -113,6 +113,27 @@ def build_query(symbol: str, company_name: str | None = None) -> str:
     return f"{symbol} ASX"
 
 
+def build_industry_query(
+    symbol: str,
+    company_name: str | None = None,
+    sector: str | None = None,
+) -> str:
+    """Build an industry/sector news query around a stock.
+
+    The point is to find broader context for the stock's sector, not just the company itself
+    - for example ``BHP Group Materials ASX`` or ``Commonwealth Bank financials ASX``.
+    """
+    if company_name:
+        base = company_name.strip()
+        if sector and sector.strip():
+            return f"{base} {sector.strip()} ASX"
+        return f"{base} ASX"
+
+    if sector and sector.strip():
+        return f"{symbol} {sector.strip()} ASX"
+    return f"{symbol} industry ASX"
+
+
 def search_url(query: str) -> str:
     """One Google News link a human can open to browse the coverage themselves.
 
@@ -186,6 +207,67 @@ def _parse_published(raw: str | None) -> datetime | None:
     return parsed
 
 
+async def _fetch_news_items(
+    query: str,
+    *,
+    symbol: str | None = None,
+    company_name: str | None = None,
+    sector: str | None = None,
+    limit: int = MAX_ITEMS,
+    timeout: float = 20.0,
+) -> list[NewsItem]:
+    """Fetch and filter a Google News RSS response for a query.
+
+    This internal helper underpins both the company-specific feed and the broader industry
+    context search; it keeps the same filtering logic and just changes the query string.
+    """
+    url = f"{NEWS_BASE}?q={quote(query)}&hl=en-AU&gl=AU&ceid=AU:en"
+
+    try:
+        async with httpx.AsyncClient(
+            headers=_HEADERS, follow_redirects=True, timeout=timeout
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise NewsError(f"could not read the news feed ({exc.__class__.__name__})") from exc
+
+    try:
+        root = ET.fromstring(response.text)
+    except ET.ParseError as exc:
+        raise NewsError("the news feed returned malformed XML") from exc
+
+    items: list[NewsItem] = []
+    symbol_code = (symbol or "").strip().upper()
+    relevance_name = company_name or symbol_code
+
+    for node in root.findall(".//item"):
+        raw_title = (node.findtext("title") or "").strip()
+        if not raw_title:
+            continue
+
+        source_node = node.find("source")
+        source = (source_node.text or "").strip() if source_node is not None else None
+        headline = _clean_headline(raw_title, source)
+
+        if symbol_code and not _is_relevant(headline, symbol_code, relevance_name):
+            if not sector or not re.search(re.escape(sector.strip()), headline, re.IGNORECASE):
+                continue
+
+        link = (node.findtext("link") or "").strip() or None
+        items.append(
+            NewsItem(
+                headline=headline,
+                source=source or None,
+                published=_parse_published(node.findtext("pubDate")),
+                url=link,
+            )
+        )
+
+    items.sort(key=lambda item: item.published or _EPOCH, reverse=True)
+    return items[:limit]
+
+
 async def get_share_news(
     symbol: str,
     company_name: str | None = None,
@@ -213,45 +295,40 @@ async def get_share_news(
         code = (symbol or "").strip().upper()
 
     query = build_query(code, company_name)
-    url = f"{NEWS_BASE}?q={quote(query)}&hl=en-AU&gl=AU&ceid=AU:en"
+    return await _fetch_news_items(
+        query,
+        symbol=code,
+        company_name=company_name,
+        limit=limit,
+        timeout=timeout,
+    )
 
+
+async def get_industry_news(
+    symbol: str,
+    company_name: str | None = None,
+    sector: str | None = None,
+    *,
+    limit: int = MAX_ITEMS,
+    timeout: float = 20.0,
+) -> list[NewsItem]:
+    """Fetch broader industry context for a stock's sector.
+
+    This is intentionally broader than company-specific news. It searches for the stock and
+    its sector together so the model can summarise what is going on in the company's
+    industry, not just what the company itself said.
+    """
     try:
-        async with httpx.AsyncClient(
-            headers=_HEADERS, follow_redirects=True, timeout=timeout
-        ) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise NewsError(f"could not read the news feed ({exc.__class__.__name__})") from exc
+        code = normalize_symbol(symbol)
+    except AsxError:
+        code = (symbol or "").strip().upper()
 
-    try:
-        root = ET.fromstring(response.text)
-    except ET.ParseError as exc:
-        raise NewsError("the news feed returned malformed XML") from exc
-
-    items: list[NewsItem] = []
-    for node in root.findall(".//item"):
-        raw_title = (node.findtext("title") or "").strip()
-        if not raw_title:
-            continue
-
-        source_node = node.find("source")
-        source = (source_node.text or "").strip() if source_node is not None else None
-        headline = _clean_headline(raw_title, source)
-
-        if not _is_relevant(headline, code, company_name):
-            continue
-
-        link = (node.findtext("link") or "").strip() or None
-        items.append(
-            NewsItem(
-                headline=headline,
-                source=source or None,
-                published=_parse_published(node.findtext("pubDate")),
-                url=link,
-            )
-        )
-
-    # Newest first, with undated items last.
-    items.sort(key=lambda item: item.published or _EPOCH, reverse=True)
-    return items[:limit]
+    query = build_industry_query(code, company_name, sector)
+    return await _fetch_news_items(
+        query,
+        symbol=code,
+        company_name=company_name,
+        sector=sector,
+        limit=limit,
+        timeout=timeout,
+    )
