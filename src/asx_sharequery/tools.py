@@ -29,6 +29,7 @@ from .news_client import (
     search_url,
 )
 from .news_client import get_share_news as fetch_news
+from .price_forecast import ForecastError, get_price_scenarios
 from .sharepoint_client import SharePointClient, SharePointError
 
 _SYMBOL_DOC = "The ASX ticker code, for example BHP, CBA, CSL, WES or A2M."
@@ -242,6 +243,35 @@ async def get_share_snapshot(symbol: Annotated[str, _SYMBOL_DOC]) -> str:
     except AsxError as exc:
         return _failure(symbol, exc)
     return _dump(snapshot.to_dict())
+
+
+@tool(
+    name="get_share_forecast",
+    description=(
+        "Calculate historical-volatility-based bear/base/bull price scenarios and "
+        "20/60/120-trading-day price trends for an ASX share. The scenario horizon "
+        "defaults to 90 trading days. This is statistical scenario analysis, not a "
+        "directional forecast or investment advice. "
+        "Use only when the user explicitly asks for a price forecast or price scenarios."
+    ),
+)
+async def get_share_forecast(
+    symbol: Annotated[str, _SYMBOL_DOC],
+    horizon_days: Annotated[
+        int, "Forecast horizon in trading days, from 1 to 252. Defaults to 90."
+    ] = 90,
+) -> str:
+    """Return transparent, historical-volatility-based price scenarios."""
+    try:
+        return _dump(await get_price_scenarios(symbol, horizon_days))
+    except ForecastError as exc:
+        return _dump(
+            {
+                "symbol": symbol,
+                "error": str(exc),
+                "hint": "Report that a price scenario could not be calculated; do not estimate one.",
+            }
+        )
 
 
 @tool(
@@ -515,6 +545,7 @@ ASX_TOOLS = [
     get_share_announcements,
     get_share_news,
     get_industry_news,
+    get_share_forecast,
 ]
 """The public-data tool surface: price snapshots, announcements and media coverage.
 
