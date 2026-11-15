@@ -1,6 +1,10 @@
 import pytest
 
-from asx_sharequery.price_forecast import ForecastError, build_scenarios
+from asx_sharequery.price_forecast import (
+    ForecastError,
+    build_scenarios,
+    suggest_peer_symbols,
+)
 
 
 def test_price_scenarios_use_zero_drift_and_horizon_scaled_volatility() -> None:
@@ -23,3 +27,7 @@ def test_price_scenarios_reject_horizons_outside_supported_range() -> None:
 
     with pytest.raises(ForecastError, match="between 1 and 252"):
         build_scenarios(10.0, prices, 300)
+
+
+def test_suggest_peer_symbols_returns_other_rare_earth_listings() -> None:
+    assert suggest_peer_symbols("ixr") == ["LYC", "ARU", "HAS"]

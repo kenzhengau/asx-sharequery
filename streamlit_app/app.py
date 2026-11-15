@@ -32,6 +32,7 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 # The project is never installed into the Cloud environment: Community Cloud builds an
@@ -54,6 +55,7 @@ from asx_sharequery.config import (  # noqa: E402
     load_settings,
 )
 from asx_sharequery.preflight import check_auth  # noqa: E402
+from asx_sharequery.price_forecast import get_price_history, suggest_peer_symbols  # noqa: E402
 
 APP_TITLE = "ASX Share Query"
 APP_VERSION = f"v{__version__}"
@@ -74,6 +76,11 @@ _DISCLAIMER = (
     "General information from public ASX data - a delayed snapshot rather than a live "
     "feed, and not financial advice."
 )
+
+_NON_TICKER_WORDS = {
+    "ASX", "AUD", "AI", "AGM", "BASE", "BEAR", "BULL", "BUY", "CEO", "ETF",
+    "FY", "HOLD", "SELL", "USA", "USD",
+}
 
 st.set_page_config(page_title=APP_TITLE, page_icon="📈", layout="centered")
 
@@ -270,6 +277,128 @@ def _answer(agent: Agent, prompt: str) -> None:
         st.session_state.history.append(
             {"role": "assistant", "content": reply, "tools": tools}
         )
+        if any(name in tools for name in ("get_share_research", "get_share_snapshot")):
+            chart_symbol = _extract_chart_symbol(prompt, reply)
+            if chart_symbol:
+                st.session_state.chart_symbol = chart_symbol
+
+
+def _extract_chart_symbol(prompt: str, reply: str) -> str | None:
+    """Find an ASX ticker in the user's prompt or the agent's answer."""
+    for text in (prompt, reply):
+        explicit = re.search(r"\bASX\s*:\s*([A-Z0-9]{1,6})\b", text, re.IGNORECASE)
+        if explicit:
+            return explicit.group(1).upper()
+        suffixed = re.search(r"\b([A-Z0-9]{1,6})\.AX\b", text, re.IGNORECASE)
+        if suffixed:
+            return suffixed.group(1).upper()
+
+    for token in re.findall(r"\b[A-Z][A-Z0-9]{1,5}\b", prompt):
+        if token not in _NON_TICKER_WORDS:
+            return token
+    return None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _load_price_histories(symbols: tuple[str, ...], period: str) -> list[dict[str, object]]:
+    """Load and briefly cache public price histories for a chart and its peers."""
+    async def load_one(symbol: str) -> dict[str, object]:
+        try:
+            return await get_price_history(symbol, period)
+        except Exception as exc:  # noqa: BLE001 - preserve partial peer results
+            return {"symbol": symbol, "error": f"{type(exc).__name__}: {exc}"}
+
+    async def load_all() -> list[dict[str, object]]:
+        return list(await asyncio.gather(*(load_one(symbol) for symbol in symbols)))
+
+    return asyncio.run(load_all())
+
+
+def _render_price_chart() -> None:
+    """Render the active share's price history and a peer performance comparison."""
+    symbol = st.session_state.get("chart_symbol")
+    if not symbol:
+        return
+
+    with st.expander(f"Price history and peers: {symbol}", expanded=True):
+        labels = ("1M", "3M", "6M", "1Y")
+        period = st.radio(
+            "History",
+            labels,
+            index=2,
+            horizontal=True,
+            key=f"chart_period::{symbol}",
+        )
+        period_value = {"1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}[period]
+        suggested = suggest_peer_symbols(symbol)
+        peers = st.multiselect(
+            "Compare with",
+            options=suggested,
+            default=suggested,
+            key=f"chart_peers::{symbol}",
+        )
+        extra = st.text_input(
+            "Add ASX tickers",
+            placeholder="e.g. ARU, LYC",
+            key=f"chart_extra_peers::{symbol}",
+        )
+        extra_symbols = [
+            code.strip().upper()
+            for code in extra.split(",")
+            if code.strip() and code.strip().upper() != symbol
+        ]
+        symbols = tuple(dict.fromkeys((symbol, *peers, *extra_symbols)))
+
+        with st.spinner("Loading price history..."):
+            histories = _load_price_histories(symbols, period_value)
+
+        series: dict[str, pd.Series] = {}
+        for ticker, history in zip(symbols, histories):
+            if history.get("error"):
+                st.caption(f"{ticker}: {history['error']}")
+                continue
+            points = history.get("points") or []
+            frame = pd.DataFrame(points)
+            if frame.empty:
+                continue
+            frame["date"] = pd.to_datetime(frame["date"])
+            series[ticker] = pd.Series(
+                frame["price"].astype(float).to_numpy(), index=frame["date"], name=ticker
+            ).sort_index()
+
+        if symbol not in series:
+            st.info(f"Price history is unavailable for {symbol} right now.")
+            return
+
+        prices = pd.concat(series.values(), axis=1).sort_index()
+        st.markdown(f"**{symbol} price (AUD)**")
+        st.line_chart(prices[[symbol]], y_label="AUD", x_label="Date")
+
+        peer_series = [ticker for ticker in series if ticker != symbol]
+        if peer_series:
+            st.markdown("**Peer performance (indexed to 100 at period start)**")
+            indexed = pd.DataFrame(
+                {
+                    ticker: values.dropna() / values.dropna().iloc[0] * 100
+                    for ticker, values in series.items()
+                }
+            ).sort_index()
+            st.line_chart(indexed, y_label="Index", x_label="Date")
+
+        latest = []
+        for ticker, values in series.items():
+            valid = values.dropna()
+            latest.append(
+                {
+                    "Ticker": ticker,
+                    "Latest price (AUD)": round(float(valid.iloc[-1]), 4),
+                    f"Change over {period}": round(
+                        (float(valid.iloc[-1]) / float(valid.iloc[0]) - 1) * 100, 2
+                    ),
+                }
+            )
+        st.dataframe(pd.DataFrame(latest).set_index("Ticker"), use_container_width=True)
+        st.caption("Daily closing prices from Yahoo Finance. Prices may be delayed.")
 
 
 # --------------------------------------------------------------------------------------
@@ -367,17 +496,16 @@ def main() -> None:
     # consumes the queue exactly once, on the run that the button triggered.
     prompt = typed or st.session_state.pop("queued_prompt", None)
 
-    if not prompt:
-        return
+    if prompt:
+        if st.session_state.turns >= MAX_TURNS_PER_SESSION:
+            st.warning(
+                f"This session has reached its limit of {MAX_TURNS_PER_SESSION} questions. "
+                "Use **New conversation** in the sidebar to carry on."
+            )
+        else:
+            _answer(agent, prompt)
 
-    if st.session_state.turns >= MAX_TURNS_PER_SESSION:
-        st.warning(
-            f"This session has reached its limit of {MAX_TURNS_PER_SESSION} questions. "
-            "Use **New conversation** in the sidebar to carry on."
-        )
-        return
-
-    _answer(agent, prompt)
+    _render_price_chart()
 
 
 # Streamlit executes this file top to bottom on every interaction, so the entry point is a
