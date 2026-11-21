@@ -1,6 +1,6 @@
 [project]
 name = "asx-sharequery"
-version = "0.1.9"
+version = "0.1.10"
 description = "Microsoft Agent Framework + ChatGPT (OpenAI) agent that researches ASX-listed shares"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ streamlit = ["streamlit>=1.64"]
 [project.scripts]
 asx-sharequery = "asx_sharequery.cli:main"
 asx-sharequery-web = "asx_sharequery.webui:main"
+asx-sharequery-mcp = "asx_sharequery.mcp_server:cli"
 
 [build-system]
 requires = ["hatchling"]

@@ -299,6 +299,35 @@ At startup the app probes `GET /models` once to confirm the token is accepted, a
 why not if it is rejected. An unreachable provider is ignored rather than fatal, so being
 offline never blocks startup.
 
+## MCP server
+
+The project includes a dependency-free MCP stdio server for ASX public-data tools. It does
+not add the `agent-framework` meta package or `cryptography`, and it exposes the same
+snapshot, announcements, company news, industry news, forecast and price-history tools
+used by the agent.
+
+Start it from the project environment:
+
+```bash
+uv run asx-sharequery-mcp
+```
+
+VS Code-style MCP configuration:
+
+```json
+{
+  "servers": {
+    "asx-sharequery": {
+      "type": "stdio",
+      "command": "/Users/kenzheng/Desktop/asx-sharequery/.venv/bin/asx-sharequery-mcp"
+    }
+  }
+}
+```
+
+The server uses public ASX, Google News and Yahoo chart data. It does not add HotCopper,
+private SharePoint, API-key-provider state or investment-advice tools.
+
 ### OpenAI token: use a Platform API key
 
 `OPENAI_API_KEY` must be an `sk-...` **Platform API key** from

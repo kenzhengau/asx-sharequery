@@ -29,7 +29,7 @@ from .news_client import (
     search_url,
 )
 from .news_client import get_share_news as fetch_news
-from .price_forecast import ForecastError, get_price_scenarios
+from .price_forecast import ForecastError, get_price_history, get_price_scenarios
 from .sharepoint_client import SharePointClient, SharePointError
 
 _SYMBOL_DOC = "The ASX ticker code, for example BHP, CBA, CSL, WES or A2M."
@@ -270,6 +270,32 @@ async def get_share_forecast(
                 "symbol": symbol,
                 "error": str(exc),
                 "hint": "Report that a price scenario could not be calculated; do not estimate one.",
+            }
+        )
+
+
+@tool(
+    name="get_share_history",
+    description=(
+        "Get daily ASX closing-price history for charting or peer comparison. Supports "
+        "1mo, 3mo, 6mo and 1y periods. Returns JSON with dated prices and the source URL."
+    ),
+)
+async def get_share_history(
+    symbol: Annotated[str, _SYMBOL_DOC],
+    period: Annotated[
+        str, "History period: 1mo, 3mo, 6mo or 1y. Defaults to 6mo."
+    ] = "6mo",
+) -> str:
+    """Return daily closing prices for an ASX-listed share."""
+    try:
+        return _dump(await get_price_history(symbol, period))
+    except ForecastError as exc:
+        return _dump(
+            {
+                "symbol": symbol,
+                "error": str(exc),
+                "hint": "Report that price history could not be retrieved; do not fabricate a chart.",
             }
         )
 
@@ -546,6 +572,7 @@ ASX_TOOLS = [
     get_share_news,
     get_industry_news,
     get_share_forecast,
+    get_share_history,
 ]
 """The public-data tool surface: price snapshots, announcements and media coverage.
 
