@@ -29,6 +29,8 @@ import asyncio
 import os
 import re
 import sys
+import queue
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -127,6 +129,20 @@ def _disable_sharepoint() -> None:
 
 
 @st.cache_resource(show_spinner=False)
+def _agent_event_loop() -> asyncio.AbstractEventLoop:
+    """Keep one event loop alive for all cached agent runs on this server process."""
+    loop = asyncio.new_event_loop()
+
+    def run_loop() -> None:
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    thread = threading.Thread(target=run_loop, name="asx-agent-event-loop", daemon=True)
+    thread.start()
+    return loop
+
+
+@st.cache_resource(show_spinner=False)
 def _agent() -> tuple[Settings, Agent]:
     """Build the settings and the agent, once for the whole server process.
 
@@ -219,22 +235,35 @@ def _stream_answer(
         """The distinct tools called so far, keeping the order they were called in."""
         return list(dict.fromkeys(tools))
 
-    async def drive() -> None:
-        async for kind, payload in _stream_turn(agent, session, prompt):
+    events: queue.Queue[tuple[str, object]] = queue.Queue()
+
+    async def drive_to_queue() -> None:
+        try:
+            async for kind, payload in _stream_turn(agent, session, prompt):
+                events.put((kind, payload))
+        except Exception as exc:
+            events.put(("error", exc))
+        finally:
+            events.put(("done", None))
+
+    loop = _agent_event_loop()
+    asyncio.run_coroutine_threadsafe(drive_to_queue(), loop)
+
+    try:
+        while True:
+            kind, payload = events.get(timeout=300)
+            if kind == "done":
+                break
+            if kind == "error":
+                raise payload if isinstance(payload, BaseException) else RuntimeError(str(payload))
             if kind == "text":
-                prose.append(payload)
+                prose.append(str(payload))
                 answer_slot.markdown(_as_markdown("".join(prose)))
             else:
-                tools.append(payload)
+                tools.append(str(payload))
                 activity.caption(
                     "Calling " + ", ".join(f"`{name}`" for name in called()) + "..."
                 )
-
-    try:
-        # Streamlit runs this script in its own thread, which has no event loop, so there
-        # is nothing here for asyncio.run to collide with. One loop per answer keeps the
-        # framework's async API usable from a synchronous app without a background thread.
-        asyncio.run(drive())
     except Exception as exc:  # noqa: BLE001 - report it, keep the app usable
         status.update(label="The run failed", state="error", expanded=True)
         st.error(f"{type(exc).__name__}: {exc}")
